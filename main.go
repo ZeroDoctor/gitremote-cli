@@ -87,14 +87,26 @@ func FindExpression(pattern, fileContent string, context int) ([]Found, error) {
 
 		if found {
 			str := "\x1b[1;36m" + line + "\x1b[0m"
-			if i-context > 0 {
-				str = lines[i-context] + "\n" + str
-			}
-			if i+context < len(lines) {
-				str = str + "\n" + lines[i+context]
+			minContext := i - context
+			if minContext < 0 {
+				minContext = 0
 			}
 
-			result = append(result, Found{content: str + "\n", lineNumber: i + context})
+			maxContext := i + context
+			if maxContext >= len(lines) {
+				maxContext = len(lines) - 1
+			}
+
+			var builder strings.Builder
+			for j := minContext; j < i; j++ {
+				builder.WriteString(lines[j] + "\n")
+			}
+			builder.WriteString(str + "\n")
+			for j := maxContext; j > i; j-- {
+				builder.WriteString(lines[j] + "\n")
+			}
+
+			result = append(result, Found{content: builder.String() + "\n", lineNumber: i + 1})
 		}
 	}
 
@@ -134,6 +146,7 @@ func Action(ctx *cli.Context) error {
 
 	fmt.Printf("looking for [pattern=%s]\n", regex)
 	for _, project := range projects {
+		fmt.Printf("checking project [name=%s]\n", project.Name)
 		for _, file := range project.Files {
 			data, err := base64.StdEncoding.DecodeString(file.Content)
 			if err != nil {

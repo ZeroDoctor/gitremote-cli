@@ -1,0 +1,7 @@
+*.exe
+*.env
+*.db
+*.image
+search-gl
+gl-search
+gitlab-cli

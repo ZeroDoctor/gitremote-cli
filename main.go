@@ -12,7 +12,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v2"
-	zdgoutil "github.com/zerodoctor/zdgo-util"
 )
 
 func GetColumnsWithTimestamp() ([]SchemaColumn, []SchemaColumn) {
@@ -206,7 +205,7 @@ func main() {
 		cancel()
 	}()
 
-	zdgoutil.OnExitWithContext(ctx, func(s os.Signal, i ...interface{}) {
+	OnExitWithContext(ctx, func(s os.Signal, i ...interface{}) {
 		cancel()
 	})
 

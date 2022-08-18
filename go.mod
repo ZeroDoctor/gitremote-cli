@@ -9,7 +9,6 @@ require (
 	github.com/lib/pq v1.10.6
 	github.com/mattn/go-sqlite3 v1.14.15
 	github.com/urfave/cli/v2 v2.11.2
-	github.com/zerodoctor/zdgo-util v0.0.0-20220701145940-b6050340fdd2
 )
 
 require (

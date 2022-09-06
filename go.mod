@@ -1,4 +1,4 @@
-module github.com/zerodoctor/remote-git-cli
+module github.com/zerodoctor/gitremote-cli
 
 go 1.18
 

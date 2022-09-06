@@ -356,23 +356,32 @@ func GetAllFileInfo(resp *http.Response, url string) ([][]byte, error) {
 }
 
 func AvoidFiles(path string) bool {
-	if !strings.Contains(path, ".") || // must have an extension
-		strings.Contains(path, ".git/") || // avoid .git files
-		strings.Contains(path, "package-lock.json") || // avoid package-lock.json files
-		strings.Contains(path, ".js.map") || // avoid js map files
-		strings.Contains(path, ".css.map") || // avoid css map files
-		strings.Contains(path, ".min.") || // avoid mini files
-		strings.Contains(path, ".png") || // avoid images
-		strings.Contains(path, ".jpeg") || // avoid images
-		strings.Contains(path, ".jpg") || // avoid images
-		strings.Contains(path, ".webp") || // avoid images
-		strings.Contains(path, ".ico") || // avoid images
-		strings.Contains(path, ".pdf") || // avoid pdf
-		strings.Contains(path, ".icc") || // avoid color profiles
-		strings.Contains(path, ".image") || // avoid docker images
-		strings.Contains(path, ".db") || // avoid sqlite database
-		strings.Contains(path, ".exe") { // avoid windows binary files
+	defaultFileExtensionToAvoid := []string{
+		".git/",
+		"package-lock.json",
+		".js.map",
+		".css.map",
+		".min.",
+		".png",
+		".jpeg",
+		".jpg",
+		".webp",
+		".ico",
+		".pdf",
+		".icc",
+		".image",
+		".db",
+		".exe",
+	}
+
+	if !strings.Contains(path, ".") { // avoid windows binary files
 		return true
+	}
+
+	for i := range defaultFileExtensionToAvoid {
+		if strings.Contains(path, defaultFileExtensionToAvoid[i]) {
+			return true
+		}
 	}
 
 	return false

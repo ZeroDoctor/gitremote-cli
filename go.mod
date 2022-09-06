@@ -1,4 +1,4 @@
-module github.com/zerodoctor/gitlab-cli
+module github.com/zerodoctor/remote-git-cli
 
 go 1.18
 

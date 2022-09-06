@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -11,6 +12,8 @@ import (
 	"sync"
 
 	"github.com/alitto/pond"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/zerodoctor/zdtui/ui"
 )
 
 type Project struct {
@@ -31,35 +34,35 @@ type File struct {
 
 func GetGroupProjects() ([]Project, error) {
 	fmt.Println("getting group projects from gitlab...")
-	var result []Project
+	var projects []Project
 
 	client := &http.Client{}
 	url := os.Getenv("GITLAB_ENDPOINT") + "/groups/" + os.Getenv("GITLAB_GROUP") + "/projects?simple=true&per_page=100"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return result, fmt.Errorf("failed to make group project request " + err.Error())
+		return projects, fmt.Errorf("failed to make group project request " + err.Error())
 	}
 	req.Header.Add("PRIVATE-TOKEN", os.Getenv("GITLAB_TOKEN"))
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return result, fmt.Errorf("failed to get response from group project " + err.Error())
+		return projects, fmt.Errorf("failed to get response from group project " + err.Error())
 	}
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return result, fmt.Errorf("failed to get read group project body - %s", err.Error())
+		return projects, fmt.Errorf("failed to get read group project body - %s", err.Error())
 	}
 	resp.Body.Close()
 
-	err = json.Unmarshal(data, &result)
+	err = json.Unmarshal(data, &projects)
 	if err != nil {
-		return result, fmt.Errorf("failed to marshal data from group project - %s", err.Error())
+		return projects, fmt.Errorf("failed to marshal data from group project - %s", err.Error())
 	}
 
-	more, err := GetPage(resp, url)
+	more, err := GetAllFileInfo(resp, url)
 	if err != nil {
-		fmt.Println("WARN: failed to page ", url, " [error="+err.Error()+"]")
+		fmt.Println("[WARN] failed to page ", url, " [error="+err.Error()+"]")
 	}
 
 	if more != nil {
@@ -67,16 +70,15 @@ func GetGroupProjects() ([]Project, error) {
 			var project Project
 			err := json.Unmarshal(d, &project)
 			if err != nil {
-				fmt.Printf("WARN: failed to unmarshal more projects [error=%s]\n", err.Error())
+				fmt.Printf("[WARN] failed to unmarshal more projects [error=%s]\n", err.Error())
 				continue
 			}
 
-			result = append(result, project)
+			projects = append(projects, project)
 		}
 	}
 
 	var newProjects []Project
-	p := pond.New(3, 0)
 	projectChan := make(chan Project, 12)
 	var wg sync.WaitGroup
 
@@ -88,74 +90,103 @@ func GetGroupProjects() ([]Project, error) {
 		wg.Done()
 	}(&wg)
 
-	for i := range result {
+	var program *tea.Program
+	var mp *ui.MultiProgressBar
+	var workload []ui.ProgressWork
+
+	for i := range projects {
 		n := i
 
-		p.Submit(func() {
-			files, err := GetFilesFromProject(result[n].ID, result[n].DefaultBranch)
+		workload = append(workload, func(pb *ui.ProgressBar) error {
+			pb.Display(fmt.Sprintf("grabbing %s...", projects[n].Name))
+			files, err := GetFilesFromProject(pb, projects[n].ID, projects[n].DefaultBranch)
 			if err != nil {
-				fmt.Printf("WARN: failed to get file from project [error=%s]\n", err.Error())
-				return
+				pb.Display(fmt.Sprintf("[ERROR] failed to get file from project [error=%s]\n", err.Error()))
+				return err
 			}
 
-			result[n].Files = files
-			projectChan <- result[n]
+			pb.Display(fmt.Sprintf("updating %s files", projects[n].Name))
+			projects[n].Files = files
+			projectChan <- projects[n]
+
+			return nil
 		})
 
+		if (i+1)%3 == 0 {
+			mp, _ = ui.NewMultiProgress(context.Background(), workload)
+
+			program = tea.NewProgram(mp)
+			if err := program.Start(); err != nil {
+				fmt.Printf("[ERROR] failed to start program [error=%s]", err.Error())
+			}
+
+			workload = []ui.ProgressWork{}
+		}
 	}
 
-	p.StopAndWait()
+	if len(workload) > 0 {
+		mp, _ = ui.NewMultiProgress(context.Background(), workload)
+
+		program = tea.NewProgram(mp)
+		if err := program.Start(); err != nil {
+			fmt.Printf("[ERROR] failed to start program [error=%s]", err.Error())
+		}
+	}
+
 	close(projectChan)
 	wg.Wait()
 
 	return newProjects, err
 }
 
-func GetFilesFromProject(id int, branch string) ([]File, error) {
-	fmt.Println("getting files from project", id)
-	var result []File
+func GetFilesFromProject(pb *ui.ProgressBar, id int, branch string) ([]File, error) {
+	var files []File
 
 	client := &http.Client{}
 	url := os.Getenv("GITLAB_ENDPOINT") + "/projects/" + strconv.Itoa(id) + "/repository/tree?recursive=true&per_page=100"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return result, fmt.Errorf("failed to make group project request " + err.Error())
+		return files, fmt.Errorf("failed to make group project request " + err.Error())
 	}
 	req.Header.Add("PRIVATE-TOKEN", os.Getenv("GITLAB_TOKEN"))
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return result, fmt.Errorf("failed to get response from group project " + err.Error())
+		return files, fmt.Errorf("failed to get response from group project " + err.Error())
 	}
+	pb.SendTick(0.1)
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return result, fmt.Errorf("failed to get read group project body - %s", err.Error())
+		return files, fmt.Errorf("failed to get read group project body - %s", err.Error())
 	}
 	resp.Body.Close()
 
-	err = json.Unmarshal(data, &result)
+	err = json.Unmarshal(data, &files)
 	if err != nil {
-		return result, fmt.Errorf("failed to unmarshal response - %s [data=%s]", err.Error(), string(data))
+		return files, fmt.Errorf("failed to unmarshal response - %s [data=%s]", err.Error(), string(data))
 	}
+	pb.SendTick(0.1)
 
-	more, err := GetPage(resp, url)
+	pb.Display("grabbing all file info...")
+	more, err := GetAllFileInfo(resp, url)
 	if err != nil {
-		return result, fmt.Errorf("failed to get more pages - %s", err.Error())
+		return files, fmt.Errorf("failed to get more pages - %s", err.Error())
 	}
 
 	for _, d := range more {
-		var files []File
-		err = json.Unmarshal(d, &files)
+		var filesInfo []File
+		err = json.Unmarshal(d, &filesInfo)
 		if err != nil {
-			fmt.Printf("WARN: failed to unmarshal more pages [error=%s] [data=%s]\n", err.Error(), string(d))
+			pb.Display(fmt.Sprintf("[WARN] failed to unmarshal more pages [error=%s] [data=%s]\n", err.Error(), string(d)))
 			continue
 		}
 
-		result = append(result, files...)
+		files = append(files, filesInfo...)
 	}
+	pb.SendTick(0.3)
 
-	var newFile []File
+	var filesWithContent []File
 	p := pond.New(3, 0)
 	fileChan := make(chan File, 30)
 	var wg sync.WaitGroup
@@ -163,40 +194,42 @@ func GetFilesFromProject(id int, branch string) ([]File, error) {
 	wg.Add(1)
 	go func(wg *sync.WaitGroup) {
 		for f := range fileChan {
-			newFile = append(newFile, f)
+			filesWithContent = append(filesWithContent, f)
 		}
 		wg.Done()
 	}(&wg)
 
-	for i := range result {
+	for i := range files {
 		n := i
 		p.Submit(func() {
-			temp, err := GetContentFromFile(id, branch, result[n])
+			temp, err := GetContentFromFile(pb, id, branch, files[n])
 			if err != nil {
-				fmt.Printf("WARN: failed to get content from pages [error=%s]\n", err.Error())
+				pb.Display(fmt.Sprintf("[WARN] failed to get content from pages [error=%s]\n", err.Error()))
 				return
 			}
 
-			result[n].ProjectID = id
-			result[n].Content = temp.Content
-			fileChan <- result[n]
+			files[n].ProjectID = id
+			files[n].Content = temp.Content
+			fileChan <- files[n]
 		})
 	}
+	pb.SendTick(0.3)
 
 	p.StopAndWait()
 	close(fileChan)
 	wg.Wait()
 
-	return newFile, nil
+	return filesWithContent, nil
 }
 
-func GetContentFromFile(projectID int, branch string, page File) (File, error) {
+func GetContentFromFile(pb *ui.ProgressBar, projectID int, branch string, page File) (File, error) {
 	if AvoidFiles(page.Path) {
 		return page, nil
 	}
 
-	fmt.Println("getting content from file", page.Path)
-	var result File
+	pb.Display(fmt.Sprintf("getting content from [file=%s]", page.Path))
+
+	var file File
 
 	filePath := strings.ReplaceAll(page.Path, "/", "%2F")
 	filePath = strings.ReplaceAll(filePath, ".", "%2E")
@@ -205,36 +238,36 @@ func GetContentFromFile(projectID int, branch string, page File) (File, error) {
 	url := os.Getenv("GITLAB_ENDPOINT") + "/projects/" + strconv.Itoa(projectID) + "/repository/files/" + filePath + "?ref=" + branch
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return result, fmt.Errorf("failed to make group project request [path=%s] [error=%s]", page.Path, err.Error())
+		return file, fmt.Errorf("failed to make group project request [path=%s] [error=%s]", page.Path, err.Error())
 	}
 	req.Header.Add("PRIVATE-TOKEN", os.Getenv("GITLAB_TOKEN"))
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return result, fmt.Errorf("failed to get response from group project [path=%s] [error=%s]", page.Path, err.Error())
+		return file, fmt.Errorf("failed to get response from group project [path=%s] [error=%s]", page.Path, err.Error())
 	}
 
 	if resp.StatusCode > 299 || resp.StatusCode < 200 {
-		fmt.Printf("WARN: failed to get [path=%s] [status_code=%d]\n", page.Path, resp.StatusCode)
+		pb.Display(fmt.Sprintf("[WARN] failed to get [path=%s] [status_code=%d]\n", page.Path, resp.StatusCode))
 		return page, nil
 	}
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return result, fmt.Errorf("failed to get read group project body [path=%s] [error=%s]", page.Path, err.Error())
+		return file, fmt.Errorf("failed to get read group project body [path=%s] [error=%s]", page.Path, err.Error())
 	}
 	resp.Body.Close()
 
-	err = json.Unmarshal(data, &result)
+	err = json.Unmarshal(data, &file)
 	if err != nil {
-		return result, fmt.Errorf("failed to unmarshal response [path=%s] [error=%s] [data=%s]", page.Path, err.Error(), string(data))
+		return file, fmt.Errorf("failed to unmarshal response [path=%s] [error=%s] [data=%s]", page.Path, err.Error(), string(data))
 	}
 
-	return result, nil
+	return file, nil
 }
 
-func GetPage(resp *http.Response, url string) ([][]byte, error) {
-	var result [][]byte
+func GetAllFileInfo(resp *http.Response, url string) ([][]byte, error) {
+	var fileInfos [][]byte
 
 	totalPageStr := resp.Header.Get("x-total-pages")
 	if totalPageStr == "" {
@@ -243,7 +276,7 @@ func GetPage(resp *http.Response, url string) ([][]byte, error) {
 
 	totalPage, err := strconv.Atoi(totalPageStr)
 	if err != nil {
-		return result, fmt.Errorf("failed to convert string [error=%s]", err.Error())
+		return fileInfos, fmt.Errorf("failed to convert string [error=%s]", err.Error())
 	}
 
 	var errs []error
@@ -266,7 +299,7 @@ func GetPage(resp *http.Response, url string) ([][]byte, error) {
 
 				errs = append(errs, err)
 			case r := <-resultChan:
-				result = append(result, r)
+				fileInfos = append(fileInfos, r)
 			case <-done:
 				return
 			}
@@ -316,10 +349,10 @@ func GetPage(resp *http.Response, url string) ([][]byte, error) {
 			errStr.WriteString(e.Error())
 		}
 
-		return result, fmt.Errorf("%s", errStr.String()+"\n]")
+		return fileInfos, fmt.Errorf("%s", errStr.String()+"\n]")
 	}
 
-	return result, nil
+	return fileInfos, nil
 }
 
 func AvoidFiles(path string) bool {
@@ -327,6 +360,7 @@ func AvoidFiles(path string) bool {
 		strings.Contains(path, ".git/") || // avoid .git files
 		strings.Contains(path, "package-lock.json") || // avoid package-lock.json files
 		strings.Contains(path, ".js.map") || // avoid js map files
+		strings.Contains(path, ".css.map") || // avoid css map files
 		strings.Contains(path, ".min.") || // avoid mini files
 		strings.Contains(path, ".png") || // avoid images
 		strings.Contains(path, ".jpeg") || // avoid images

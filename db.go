@@ -10,6 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/zerodoctor/gitremote-cli/gitlab"
 )
 
 var dbHandler *DBHandler
@@ -87,7 +88,7 @@ func (db *DBHandler) CreateLiteTables() error {
 	return err
 }
 
-func (db *DBHandler) InsertProject(project Project) error {
+func (db *DBHandler) InsertProject(project gitlab.Project) error {
 	insert := "INSERT OR REPLACE INTO projects (id, name, description, default_branch) VALUES (:id, :name, :description, :default_branch);"
 
 	_, err := db.lite.NamedExec(insert, project)
@@ -106,14 +107,14 @@ func (db *DBHandler) InsertProject(project Project) error {
 	return nil
 }
 
-func (db *DBHandler) InsertFile(file File) error {
+func (db *DBHandler) InsertFile(file gitlab.File) error {
 	insert := "INSERT OR REPLACE INTO files (id, name, path, content, project_id) VALUES (:id, :name, :path, :content, :project_id);"
 	_, err := db.lite.NamedExec(insert, file)
 	return err
 }
 
-func (db *DBHandler) SelectProjects(projectNames []string) ([]Project, error) {
-	var projects []Project
+func (db *DBHandler) SelectProjects(projectNames []string) ([]gitlab.Project, error) {
+	var projects []gitlab.Project
 
 	query, args, err := sqlx.In("SELECT * FROM projects WHERE name IN (?);", projectNames)
 	if err != nil {
@@ -139,8 +140,8 @@ func (db *DBHandler) SelectProjects(projectNames []string) ([]Project, error) {
 	return projects, nil
 }
 
-func (db *DBHandler) SelectAllProjects() ([]Project, error) {
-	var projects []Project
+func (db *DBHandler) SelectAllProjects() ([]gitlab.Project, error) {
+	var projects []gitlab.Project
 
 	query := "SELECT * FROM projects;"
 
@@ -162,8 +163,8 @@ func (db *DBHandler) SelectAllProjects() ([]Project, error) {
 	return projects, nil
 }
 
-func (db *DBHandler) SelectFiles(projectID int) ([]File, error) {
-	var files []File
+func (db *DBHandler) SelectFiles(projectID int) ([]gitlab.File, error) {
+	var files []gitlab.File
 	err := db.lite.Select(&files, "SELECT * FROM files WHERE project_id = $1", projectID)
 	return files, err
 }

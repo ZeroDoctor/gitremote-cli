@@ -12,9 +12,10 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli/v2"
+	"github.com/zerodoctor/gitremote-cli/gitlab"
 )
 
-func CacheProjects(projects []Project) {
+func CacheProjects(projects []gitlab.Project) {
 	fmt.Println("caching projects...")
 	for _, project := range projects {
 		err := DB().InsertProject(project)
@@ -25,7 +26,7 @@ func CacheProjects(projects []Project) {
 	fmt.Println("finished caching projects")
 }
 
-func GetProjects(projects []string, fromCache bool) []Project {
+func GetProjects(projects []string, fromCache bool) []gitlab.Project {
 	if !fromCache {
 		return UpdateCache()
 	}
@@ -93,8 +94,8 @@ func FindExpression(pattern, fileContent string, context int) ([]Found, error) {
 	return result, nil
 }
 
-func UpdateCache() []Project {
-	result, err := GetGroupProjects()
+func UpdateCache() []gitlab.Project {
+	result, err := gitlab.GetGroupProjects()
 	if err != nil {
 		log.Fatalf("failed to get groups projects [error=%s]", err.Error())
 	}

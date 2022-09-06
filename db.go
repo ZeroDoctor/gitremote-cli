@@ -24,16 +24,10 @@ func DB() *DBHandler {
 }
 
 type DBHandler struct {
-	psql *sqlx.DB
 	lite *sqlx.DB
 }
 
 func connect() *DBHandler {
-	psql, err := sqlx.Connect("postgres", "host=localhost port=5432 dbname=smallwood_tools user=postgres password=password sslmode=disable")
-	if err != nil {
-		log.Fatalf("failed to connect to psql [error=%s]", err.Error())
-	}
-
 	path, err := os.Executable()
 	if err != nil {
 		log.Fatalf("failed to get [file=%s] [error=%s]\n", path, err.Error())
@@ -51,7 +45,7 @@ func connect() *DBHandler {
 		log.Fatalf("failed to connect to [path=%s] [error=%s]", path+"/lite.db", err.Error())
 	}
 
-	db := &DBHandler{psql: psql, lite: lite}
+	db := &DBHandler{lite: lite}
 	err = db.CreateLiteTables()
 	if err != nil {
 		log.Fatalf("failed to create sqlite tables [error=%s]", err.Error())
@@ -64,15 +58,6 @@ type SchemaColumn struct {
 	TableName  string `db:"table_name"`
 	DataType   string `db:"data_type"`
 	ColumnName string `db:"column_name"`
-}
-
-func (db *DBHandler) GetPublicColumns() ([]SchemaColumn, error) {
-	query := "SELECT table_name, data_type, column_name FROM information_schema.columns where table_schema = 'public';"
-
-	var columns []SchemaColumn
-	err := db.psql.Select(&columns, query)
-
-	return columns, err
 }
 
 func (db *DBHandler) CreateLiteTables() error {

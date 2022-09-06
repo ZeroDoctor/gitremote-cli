@@ -14,26 +14,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetColumnsWithTimestamp() ([]SchemaColumn, []SchemaColumn) {
-	var Zone []SchemaColumn
-	var NoZone []SchemaColumn
-
-	columns, err := DB().GetPublicColumns()
-	if err != nil {
-		log.Fatalf("failed to get all columns [error=%s]", err.Error())
-	}
-
-	for _, column := range columns {
-		if strings.Contains(column.DataType, "timestamp with ") {
-			Zone = append(Zone, column)
-		} else if strings.Contains(column.DataType, "timestamp without ") {
-			NoZone = append(NoZone, column)
-		}
-	}
-
-	return Zone, NoZone
-}
-
 func CacheProjects(projects []Project) {
 	fmt.Println("caching projects...")
 	for _, project := range projects {
